@@ -1,0 +1,49 @@
+# --- Importaciones ---
+from machine import Pin, SPI, SoftI2C
+import utime
+import time
+from nrf24l01 import NRF24L01  
+from ssd1306 import SSD1306_I2C
+
+# --- Configuración de pantalla OLED ---
+OLED_WIDTH  = 128
+OLED_HEIGHT = 64
+
+i2c_oled = SoftI2C(scl=Pin(9), sda=Pin(8), freq=200_000)
+
+print("🖧 Dirección I2C:", hex(i2c_oled.scan()[0]).upper())
+print("⚙️  Configuración I2C:", i2c_oled)
+
+oled = SSD1306_I2C(OLED_WIDTH, OLED_HEIGHT, i2c_oled)
+
+# --- Configuración del módulo NRF24L01 ---
+pin_csn = Pin(5, Pin.OUT)
+pin_ce = Pin(17, Pin.OUT)
+
+spi_bus = SPI(0, baudrate=20_000_000, polarity=0, phase=0,
+              sck=Pin(18), mosi=Pin(19), miso=Pin(16))
+
+nrf_radio = NRF24L01(spi_bus, pin_csn, pin_ce, channel=68, payload_size=16)
+direccion_recepcion = b'4node'
+
+nrf_radio.open_rx_pipe(0, direccion_recepcion)
+nrf_radio.start_listening()
+
+# --- Función para mostrar mensaje en pantalla OLED ---
+def mostrar_en_oled(mensaje):
+    oled.fill(0)
+    oled.text("RSSI:", 5, 8)
+    oled.text(mensaje.decode('utf-8'), 45, 18)
+    oled.show()
+
+# --- Función para recibir datos por radio ---
+def recibir_dato():
+    if nrf_radio.any():
+        mensaje = nrf_radio.recv()
+        mensaje_limpio = mensaje.rstrip(b'\x00')
+        print("📥 Mensaje recibido:", mensaje_limpio)
+        mostrar_en_oled(mensaje_limpio)
+
+# --- Bucle principal ---
+while True:
+    recibir_dato()
