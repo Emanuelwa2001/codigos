@@ -1,0 +1,70 @@
+# --- Importaciones ---
+from micropython import const
+from time import sleep
+import time
+from machine import I2C, Pin, SPI
+from utime import ticks_diff, ticks_us
+from nrf24l01 import NRF24L01
+import network
+from ssd1306 import SSD1306_I2C
+
+# --- Constantes para configuración del NRF24L01 ---
+TX_POWER_LOWEST   = const(0x00)  # -18 dBm
+TX_POWER_LOW      = const(0x02)  # -12 dBm
+TX_POWER_MEDIUM   = const(0x04)  # -6 dBm
+TX_POWER_MAX      = const(0x06)  # 0 dBm
+
+DATA_RATE_1MBPS   = const(0x00)
+DATA_RATE_2MBPS   = const(0x08)
+DATA_RATE_250KBPS = const(0x20)
+
+# --- Pines y configuración SPI ---
+pin_csn = Pin(5, Pin.OUT)
+pin_ce = Pin(17, Pin.OUT)
+spi_bus = SPI(0, baudrate=20_000_000, polarity=0, phase=0,
+              sck=Pin(18), mosi=Pin(19), miso=Pin(16))
+
+# --- Inicialización del módulo NRF24L01 ---
+nrf_radio = NRF24L01(spi_bus, pin_csn, pin_ce, channel=68, payload_size=16)
+pipe_address = b'4node'
+nrf_radio.open_tx_pipe(pipe_address)
+
+# --- Configuración de red WiFi ---
+wifi = network.WLAN(network.STA_IF)
+wifi.active(True)
+
+RED_WIFI = "Redmi"
+CLAVE_WIFI = "12345678"
+
+wifi.connect(RED_WIFI, CLAVE_WIFI)
+
+# Espera hasta que se establezca la conexión
+while not wifi.isconnected():
+    sleep(2)
+
+print("✅ Conectado a WiFi")
+print("📡 IP asignada:", wifi.ifconfig()[0])
+
+# --- Función para enviar mensaje por NRF24L01 ---
+def transmitir_rssi(promedio_rssi):
+    try:
+        nrf_radio.send(promedio_rssi)
+        print(f"📤 RSSI enviado: {promedio_rssi}")
+        estado = nrf_radio.reg_read(0x07)
+        print(f"📦 Estado del registro STATUS: {bin(estado)}")
+    except OSError:
+        print("❌ Error al enviar el mensaje")
+
+# --- Bucle principal ---
+while True:
+    muestras_rssi = []
+
+    # Obtener 10 muestras del RSSI
+    for _ in range(10):
+        muestras_rssi.append(wifi.status('rssi'))
+
+    # Calcular el promedio y convertirlo a string
+    promedio_rssi = str(sum(muestras_rssi) / len(muestras_rssi))
+
+    # Enviar el promedio por radio
+    transmitir_rssi(promedio_rssi)
